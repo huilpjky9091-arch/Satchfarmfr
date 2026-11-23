@@ -1,27 +1,30 @@
-# Evergreen Valley Online
+# Evergreen Valley Online (`v1.0.0`)
 
-2D Pixel Art Farming RPG / Life Simulation / Multiplayer — built with React, TypeScript, Phaser 3, and Tailwind CSS.
+2D Pixel Art Farming RPG / Life Simulation / Online Multiplayer — built with **React + TypeScript + Phaser 3 + Tailwind CSS + Node.js & Socket.IO**.
 
-## Current Status: Phase 1 Complete (`v0.1.0`)
+**Live Web Game**: https://huilpjky9091-arch.github.io/Satchfarmfr/
 
-- **Game Engine**: Phaser 3 + Arcade Physics + crisp pixel-art rendering (`pixelArt: true`, `roundPixels: true`)
-- **Original Pixel Art**: Procedural 16x16 tileset & multi-tile props (farmhouse, oak/pine trees, stone well, shipping bin, fences, wildflowers, animated pond water)
-- **Character Creation**: Live pixel-art sprite customization (Name, Farm Name, Skin Tone, 4 Hair Styles, Hair/Shirt/Pants Colors)
-- **Controls**: 8-directional movement (`WASD` / `Arrow Keys`), Sprint (`Shift`) with Stamina drain/regen, Interact (`E` / `Space`), and Touch Virtual D-Pad + Action buttons for Mobile & Tablet
-- **World Core**: Collisions, Y-sorted depth rendering, interactable world objects with RPG dialogue box, Day-Night lighting cycle & clock, procedural Web Audio SFX
+## Implemented Systems (Phases 1–10)
+
+- **10 Open World Zones**: Player Farm, Evergreen Village, Town Market, Community Center, Enchanted Forest, Fishing Lake, Sunlit Beach, Emerald Mountain, Crystal Mine (10 Floors), and unlockable Whispering Sanctuary.
+- **Farming & Ranching**: 32 original crops across 4 seasons (Spring/Summer/Autumn/Winter), till/water/fertilize/plant/harvest/fence, and 7 farm animals (Chicken, Duck, Rabbit, Cow, Goat, Sheep, Pig).
+- **RPG, Inventory & Crafting**: Character creator, 24-slot inventory + 9-slot hotbar, 5 RPG skills (Farming, Mining, Fishing, Foraging, Combat), equipment, and crafting recipes.
+- **20 Original NPCs & Quests**: Daily schedules, seasonal dialogues, loved/liked/disliked gifts, heart events, marriage (*Starlight Pendant*), and 12 quests across all 7 categories.
+- **Fishing & Crystal Mine Combat**: Playable fishing mini-game with 42 fish (5 Legendaries), 10-floor mine with ores/gems, monsters, Floor 10 Boss (*Crystal Guardian*), Sword/Bow/Magic Staff & Armor.
+- **Real-time Multiplayer Backend (`server/`)**: Node.js + Express + Socket.IO with salted scrypt auth, 6-char Room Codes (1–8 players), real-time player movement sync, shared farm sync, chat, and item gifting.
+- **Save/Load & Patch Registry**: Auto-save, 3 manual slots, backup recovery, JSON Export/Import, `ContentRegistry`, and `migrateSaveData()`.
 
 ## Run Locally
 
 ```bash
 npm install
-npm run dev
+npm run dev       # Start web client on http://localhost:5173
+npm run server    # Start multiplayer Socket.IO server on http://localhost:3001
 ```
 
-## Build & Typecheck
+## Build & Verify
 
 ```bash
 npm run typecheck
 npm run build
 ```
-
-See [docs/ROADMAP.md](docs/ROADMAP.md) for the full 10-phase development tracker.

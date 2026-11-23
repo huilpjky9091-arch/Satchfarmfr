@@ -1,102 +1,185 @@
 import React, { useRef, useState } from 'react';
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Hand, Pickaxe, Zap } from 'lucide-react';
+import { Hand, Pickaxe, Zap } from 'lucide-react';
 import { EventBus } from '../game/systems/EventBus';
 
 interface MobileControlsProps {
   canInteract: boolean;
 }
 
+const MAX_RADIUS = 44;
+const DEADZONE = 0.14;
+
 export const MobileControls: React.FC<MobileControlsProps> = ({ canInteract }) => {
-  const dirsRef = useRef({ up: false, down: false, left: false, right: false });
-  const [sprinting, setSprinting] = useState(false);
+  const padRef = useRef<HTMLDivElement | null>(null);
+  const pointerIdRef = useRef<number | null>(null);
   const sprintRef = useRef(false);
+  const vecRef = useRef({ dx: 0, dy: 0 });
 
-  const emit = () => {
-    const d = dirsRef.current;
-    const dx = (d.right ? 1 : 0) - (d.left ? 1 : 0);
-    const dy = (d.down ? 1 : 0) - (d.up ? 1 : 0);
-    EventBus.emit('input:mobile', { dx, dy, sprinting: sprintRef.current });
+  const [knobOffset, setKnobOffset] = useState({ x: 0, y: 0 });
+  const [active, setActive] = useState(false);
+  const [sprintLocked, setSprintLocked] = useState(false);
+
+  const emitInput = () => {
+    EventBus.emit('input:mobile', {
+      dx: vecRef.current.dx,
+      dy: vecRef.current.dy,
+      sprinting: sprintRef.current,
+    });
   };
 
-  const setDir = (dir: keyof typeof dirsRef.current, active: boolean) => {
-    dirsRef.current[dir] = active;
-    emit();
+  const updateStickFromClient = (clientX: number, clientY: number) => {
+    const pad = padRef.current;
+    if (!pad) return;
+    const rect = pad.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+
+    let rx = clientX - cx;
+    let ry = clientY - cy;
+    const dist = Math.hypot(rx, ry);
+
+    if (dist > MAX_RADIUS) {
+      rx = (rx / dist) * MAX_RADIUS;
+      ry = (ry / dist) * MAX_RADIUS;
+    }
+
+    setKnobOffset({ x: rx, y: ry });
+
+    const norm = Math.min(1, dist / MAX_RADIUS);
+    if (norm < DEADZONE) {
+      vecRef.current = { dx: 0, dy: 0 };
+    } else {
+      const scaled = (norm - DEADZONE) / (1 - DEADZONE);
+      vecRef.current = {
+        dx: (rx / Math.max(1, dist)) * scaled,
+        dy: (ry / Math.max(1, dist)) * scaled,
+      };
+    }
+    emitInput();
   };
 
-  const toggleSprint = (active: boolean) => {
-    sprintRef.current = active;
-    setSprinting(active);
-    emit();
+  const resetStick = () => {
+    pointerIdRef.current = null;
+    setActive(false);
+    setKnobOffset({ x: 0, y: 0 });
+    vecRef.current = { dx: 0, dy: 0 };
+    emitInput();
   };
 
-  const bindBtn = (dir: keyof typeof dirsRef.current) => ({
-    onPointerDown: (e: React.PointerEvent) => {
-      e.preventDefault();
-      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-      setDir(dir, true);
-    },
-    onPointerUp: (e: React.PointerEvent) => {
-      e.preventDefault();
-      setDir(dir, false);
-    },
-    onPointerCancel: () => setDir(dir, false),
-  });
+  const handleStickDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (pointerIdRef.current !== null) return;
+    pointerIdRef.current = e.pointerId;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setActive(true);
+    updateStickFromClient(e.clientX, e.clientY);
+  };
+
+  const handleStickMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (pointerIdRef.current !== e.pointerId) return;
+    e.preventDefault();
+    e.stopPropagation();
+    updateStickFromClient(e.clientX, e.clientY);
+  };
+
+  const handleStickUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (pointerIdRef.current !== e.pointerId) return;
+    e.preventDefault();
+    e.stopPropagation();
+    resetStick();
+  };
+
+  const toggleSprint = (e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const next = !sprintRef.current;
+    sprintRef.current = next;
+    setSprintLocked(next);
+    emitInput();
+  };
 
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-20 z-30 flex items-end justify-between px-3 sm:px-5">
-      {/* Virtual D-Pad */}
-      <div className="pointer-events-auto grid grid-cols-3 grid-rows-3 gap-1 w-32 h-32">
-        <div />
-        <button {...bindBtn('up')} aria-label="Up" className="wood-panel-dark rounded-xl flex items-center justify-center opacity-85 active:scale-95">
-          <ArrowUp className="w-5 h-5" />
-        </button>
-        <div />
-        <button {...bindBtn('left')} aria-label="Left" className="wood-panel-dark rounded-xl flex items-center justify-center opacity-85 active:scale-95">
-          <ArrowLeft className="w-5 h-5" />
-        </button>
-        <div className="rounded-xl bg-wood-900/35" />
-        <button {...bindBtn('right')} aria-label="Right" className="wood-panel-dark rounded-xl flex items-center justify-center opacity-85 active:scale-95">
-          <ArrowRight className="w-5 h-5" />
-        </button>
-        <div />
-        <button {...bindBtn('down')} aria-label="Down" className="wood-panel-dark rounded-xl flex items-center justify-center opacity-85 active:scale-95">
-          <ArrowDown className="w-5 h-5" />
-        </button>
-        <div />
+    <div
+      className="pointer-events-none fixed inset-x-0 bottom-20 z-30 flex items-end justify-between px-4 sm:px-7"
+      style={{ touchAction: 'none' }}
+    >
+      {/* 360° Smooth Analog Thumbstick */}
+      <div
+        ref={padRef}
+        onPointerDown={handleStickDown}
+        onPointerMove={handleStickMove}
+        onPointerUp={handleStickUp}
+        onPointerCancel={handleStickUp}
+        style={{ touchAction: 'none' }}
+        aria-label="Virtual Analog Joystick"
+        className={`pointer-events-auto relative w-32 h-32 sm:w-36 sm:h-36 rounded-full border-4 flex items-center justify-center transition-colors ${
+          active
+            ? 'bg-wood-900/65 border-amber-300/90'
+            : 'bg-wood-900/45 border-wood-300/60'
+        } backdrop-blur-[2px] shadow-pixel`}
+      >
+        {/* Subtle cardinal direction ticks */}
+        <div className="pointer-events-none absolute top-2.5 w-1.5 h-1.5 rounded-full bg-wood-200/60" />
+        <div className="pointer-events-none absolute bottom-2.5 w-1.5 h-1.5 rounded-full bg-wood-200/60" />
+        <div className="pointer-events-none absolute left-2.5 w-1.5 h-1.5 rounded-full bg-wood-200/60" />
+        <div className="pointer-events-none absolute right-2.5 w-1.5 h-1.5 rounded-full bg-wood-200/60" />
+
+        {/* Movable Thumb Knob */}
+        <div
+          className={`pointer-events-none w-14 h-14 sm:w-16 sm:h-16 rounded-full border-3 shadow-lg flex items-center justify-center ${
+            active
+              ? 'bg-gradient-to-b from-amber-200 to-amber-400 border-wood-900'
+              : 'bg-gradient-to-b from-wood-200 to-wood-400 border-wood-800 opacity-90'
+          }`}
+          style={{
+            transform: `translate3d(${knobOffset.x}px, ${knobOffset.y}px, 0)`,
+          }}
+        >
+          <div className="w-5 h-5 rounded-full bg-white/40" />
+        </div>
       </div>
 
-      {/* Action Buttons: Sprint + Use Tool + Interact */}
-      <div className="pointer-events-auto flex items-center gap-2">
+      {/* Action Buttons: Toggle Sprint + Use Tool + Interact */}
+      <div className="pointer-events-auto flex items-center gap-2.5" style={{ touchAction: 'none' }}>
+        <button
+          onPointerDown={toggleSprint}
+          style={{ touchAction: 'none' }}
+          className={`w-14 h-14 sm:w-16 sm:h-16 rounded-full border-3 flex flex-col items-center justify-center text-[10px] font-bold shadow-pixel transition ${
+            sprintLocked
+              ? 'bg-amber-400 border-wood-900 text-wood-900 scale-95 ring-2 ring-amber-200'
+              : 'wood-panel-dark opacity-90'
+          }`}
+        >
+          <Zap className="w-5 h-5" />
+          <span>{sprintLocked ? 'วิ่ง: เปิด' : 'วิ่ง'}</span>
+        </button>
+
         <button
           onPointerDown={(e) => {
             e.preventDefault();
-            toggleSprint(true);
+            e.stopPropagation();
+            EventBus.emit('action:use_tool');
           }}
-          onPointerUp={() => toggleSprint(false)}
-          onPointerCancel={() => toggleSprint(false)}
-          className={`w-12 h-12 rounded-full border-2 flex flex-col items-center justify-center text-[9px] font-bold shadow-pixel ${
-            sprinting ? 'bg-amber-400 border-wood-900 text-wood-900' : 'wood-panel-dark opacity-90'
-          }`}
+          style={{ touchAction: 'none' }}
+          className="wood-btn-primary w-16 h-16 sm:w-[70px] sm:h-[70px] rounded-full flex flex-col items-center justify-center text-[11px] font-bold shadow-pixel"
         >
-          <Zap className="w-4 h-4" />
-          <span>วิ่ง</span>
-        </button>
-
-        <button
-          onClick={() => EventBus.emit('action:use_tool')}
-          className="wood-btn-primary w-14 h-14 rounded-full flex flex-col items-center justify-center text-[10px] font-bold shadow-pixel"
-        >
-          <Pickaxe className="w-5 h-5" />
+          <Pickaxe className="w-6 h-6" />
           <span>ใช้/ตี</span>
         </button>
 
         <button
-          onClick={() => EventBus.emit('interact:trigger')}
-          className={`w-14 h-14 rounded-full flex flex-col items-center justify-center text-[10px] font-bold shadow-pixel transition ${
-            canInteract ? 'wood-btn scale-105' : 'wood-panel-dark opacity-75'
+          onPointerDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            EventBus.emit('interact:trigger');
+          }}
+          style={{ touchAction: 'none' }}
+          className={`w-16 h-16 sm:w-[70px] sm:h-[70px] rounded-full flex flex-col items-center justify-center text-[11px] font-bold shadow-pixel transition ${
+            canInteract ? 'wood-btn scale-105 ring-2 ring-amber-200' : 'wood-panel-dark opacity-75'
           }`}
         >
-          <Hand className="w-5 h-5" />
+          <Hand className="w-6 h-6" />
           <span>สำรวจ</span>
         </button>
       </div>

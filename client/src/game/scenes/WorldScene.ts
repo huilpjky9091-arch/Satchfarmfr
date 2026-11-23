@@ -158,8 +158,8 @@ export class WorldScene extends Phaser.Scene {
     this.player.setCollideWorldBounds(true);
 
     const body = this.player.body as Phaser.Physics.Arcade.Body;
-    body.setSize(10, 7);
-    body.setOffset(3, 16);
+    body.setSize(8, 6);
+    body.setOffset(4, 17);
 
     this.physics.add.collider(this.player, this.colliders);
 
@@ -234,12 +234,13 @@ export class WorldScene extends Phaser.Scene {
       });
     }
 
-    // Mouse click to use tool / attack
+    // Mouse/Touch click directly on canvas to use tool / attack
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
       if (this.isPaused || this.isDialogOpen) return;
+      if (pointer.event && pointer.event.target !== this.game.canvas) return;
       if (pointer.rightButtonDown()) {
         this.tryInteract();
-      } else if (pointer.leftButtonDown()) {
+      } else if (pointer.leftButtonDown() && !pointer.wasTouch) {
         this.useActiveTool();
       }
     });
@@ -1279,7 +1280,7 @@ export class WorldScene extends Phaser.Scene {
       return;
     }
 
-    // Movement Input
+    // Movement Input (Keyboard + Smooth 360° Analog Joystick)
     let dx = this.mobileInput.dx;
     let dy = this.mobileInput.dy;
     if (this.cursors && this.keys) {
@@ -1290,33 +1291,70 @@ export class WorldScene extends Phaser.Scene {
     }
 
     const len = Math.hypot(dx, dy);
-    const isMoving = len > 0.1;
+    const isMoving = len > 0.08;
     const wantsSprint = Boolean(this.keys?.shift.isDown) || this.mobileInput.sprinting;
     const isSprinting = isMoving && wantsSprint && GameState.stats.stamina > 2;
 
+    const dtSec = delta / 1000;
+    let staminaChanged = false;
     if (isSprinting) {
-      GameState.stats.stamina = Math.max(0, GameState.stats.stamina - 12 * (delta / 1000));
+      GameState.stats.stamina = Math.max(0, GameState.stats.stamina - 12 * dtSec);
+      staminaChanged = true;
+    } else if (GameState.stats.stamina < GameState.stats.maxStamina) {
+      const regenRate = isMoving ? 5 : 12;
+      GameState.stats.stamina = Math.min(GameState.stats.maxStamina, GameState.stats.stamina + regenRate * dtSec);
+      staminaChanged = true;
     }
 
+    const accel = Math.min(1, delta * 0.022);
     if (isMoving) {
       const nx = dx / len;
       const ny = dy / len;
-      const speed = isSprinting ? SPRINT_SPEED : WALK_SPEED;
-      body.setVelocity(nx * speed, ny * speed);
+      const analogMag = Math.min(1, len);
+      const maxSpeed = isSprinting ? SPRINT_SPEED : WALK_SPEED;
+      const targetVx = nx * maxSpeed * analogMag;
+      const targetVy = ny * maxSpeed * analogMag;
+
+      const curVx = Phaser.Math.Linear(body.velocity.x, targetVx, accel);
+      const curVy = Phaser.Math.Linear(body.velocity.y, targetVy, accel);
+      body.setVelocity(curVx, curVy);
 
       this.facing = Math.abs(nx) > Math.abs(ny) ? (nx < 0 ? 'left' : 'right') : ny < 0 ? 'up' : 'down';
       const animKey = `player_walk_${this.facing}`;
       if (this.player.anims.currentAnim?.key !== animKey) {
         this.player.anims.play(animKey, true);
       }
-      this.player.anims.timeScale = isSprinting ? 1.4 : 1;
+      this.player.anims.timeScale = (isSprinting ? 1.4 : 1) * Math.max(0.55, analogMag);
 
       const tx = Math.floor(this.player.x / TILE_SIZE);
       const ty = Math.floor(this.player.y / TILE_SIZE);
       const tk = this.tileGrid[ty]?.[tx] ?? '';
       AudioSystem.playFootstep(tk.includes('path') || tk.includes('mine') ? 'path' : 'grass', isSprinting);
+
+      // Subtle sprint dust puff at feet
+      if (isSprinting && Math.random() < 0.28) {
+        const puff = this.add
+          .circle(this.player.x + (Math.random() - 0.5) * 6, this.player.y + 1, 2, 0xfef3c7, 0.65)
+          .setDepth(this.player.y - 2);
+        this.tweens.add({
+          targets: puff,
+          y: puff.y - 4,
+          alpha: 0,
+          scale: 1.7,
+          duration: 260,
+          onComplete: () => puff.destroy(),
+        });
+      }
     } else {
-      body.setVelocity(0, 0);
+      // Smooth deceleration stop
+      const decel = Math.min(1, delta * 0.028);
+      const nextVx = Phaser.Math.Linear(body.velocity.x, 0, decel);
+      const nextVy = Phaser.Math.Linear(body.velocity.y, 0, decel);
+      if (Math.hypot(nextVx, nextVy) < 4) {
+        body.setVelocity(0, 0);
+      } else {
+        body.setVelocity(nextVx, nextVy);
+      }
       this.stopWalkAnim();
     }
 
@@ -1377,7 +1415,7 @@ export class WorldScene extends Phaser.Scene {
         isSprinting,
         mineFloor: GameState.mineFloor,
       });
-      if (isSprinting) {
+      if (staminaChanged) {
         EventBus.emit('player:stats', { ...GameState.stats, stamina: Math.round(GameState.stats.stamina) });
       }
     }
